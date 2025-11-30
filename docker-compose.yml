@@ -1,0 +1,58 @@
+version: '3.9'
+
+services:
+  app:
+    build: .
+    container_name: call-events-app
+    working_dir: /var/www/html
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/var/www/html
+    env_file:
+      - .env
+    depends_on:
+      - mysql
+      - rabbitmq
+
+  mysql:
+    image: mysql:8.0
+    container_name: call-events-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: secret
+      MYSQL_DATABASE: call_events
+    ports:
+      - "3307:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: call-events-rabbit
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    ports:
+      - "5672:5672"    # AMQP
+      - "15672:15672"  # Web panel (http://localhost:15672)
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+
+  queue-worker:
+    build: .
+    container_name: call-events-queue-worker
+    working_dir: /var/www/html
+    command: php artisan queue:work --tries=3
+    depends_on:
+      - app
+      - rabbitmq
+    volumes:
+      - .:/var/www/html
+    env_file:
+      - .env
+
+volumes:
+  mysql_data:
+  rabbitmq_data:
