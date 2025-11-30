@@ -1,59 +1,146 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+(Laravel + RabbitMQ sistemi üçün strukturlaşdırılmış təlimat)
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+======================================================================
+1. ÜMUMİ MƏLUMAT
 
-## About Laravel
+Call Events Service – SIP/telefoniya serverindən daxil olan zəng eventlərini qəbul edən, validasiya edən, məlumat bazasına loqlayan və RabbitMQ queue-a göndərən mikroservisdir. Sistem performanslı və genişlənə bilən memarlıqla hazırlanmışdır.
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+======================================================================
+2. QURAŞDIRMA (SETUP İNSTRUKSİYASI)
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+2.1. Layihənin yüklənməsi
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+Terminalda aşağıdakı əmrləri icra edin:
 
-## Learning Laravel
+git clone <REPO_URL> call-events-service
+cd call-events-service
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework. You can also check out [Laravel Learn](https://laravel.com/learn), where you will be guided through building a modern Laravel application.
+2.2. Docker ilə sistemin qaldırılması
 
-If you don't feel like reading, [Laracasts](https://laracasts.com) can help. Laracasts contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
+Layihə Laravel, MySQL və RabbitMQ ilə birlikdə Docker vasitəsilə qaldırılır:
 
-## Laravel Sponsors
+docker compose up -d --build
 
-We would like to extend our thanks to the following sponsors for funding Laravel development. If you are interested in becoming a sponsor, please visit the [Laravel Partners program](https://partners.laravel.com).
+2.3. Migrasiyaların icra edilməsi
 
-### Premium Partners
+Məlumat bazası cədvəllərinin yaradılması üçün:
 
-- **[Vehikl](https://vehikl.com)**
-- **[Tighten Co.](https://tighten.co)**
-- **[Kirschbaum Development Group](https://kirschbaumdevelopment.com)**
-- **[64 Robots](https://64robots.com)**
-- **[Curotec](https://www.curotec.com/services/technologies/laravel)**
-- **[DevSquad](https://devsquad.com/hire-laravel-developers)**
-- **[Redberry](https://redberry.international/laravel-development)**
-- **[Active Logic](https://activelogic.com)**
+docker compose exec app php artisan migrate
 
-## Contributing
+2.4. Queue Worker-in işə salınması
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+RabbitMQ mesajları Laravel Job vasitəsilə göndərildiyi üçün worker aktiv olmalıdır:
 
-## Code of Conduct
+docker compose exec app php artisan queue:work --queue=call-events
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+======================================================================
+3. API MƏLUMATLARI
 
-## Security Vulnerabilities
+3.1. Endpoint məlumatı
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+Method: POST
+URL: http://localhost:8000/api/call-events
 
-## License
+3.2. Header
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+X-API-TOKEN: super-secret-token
+
+3.3. Request Body nümunəsi
+
+{
+"call_id": "abc-123",
+"from_number": "+994501234567",
+"to_number": "+994701234567",
+"event_type": "call_ended",
+"timestamp": "2025-11-30T10:00:00Z",
+"duration": 40
+}
+
+3.4. Uğurlu cavab
+
+{ "status": "queued" }
+
+======================================================================
+4. SİSTEMİN İŞ PRİNSİPİ
+
+4.1. Event qəbul axını
+
+Telefoniya serveri /api/call-events endpointinə məlumat göndərir.
+
+Token (X-API-TOKEN) doğrulanır.
+
+Validasiya icra edilir:
+
+Bütün sahələr məcburidir.
+
+“duration” yalnız event_type = call_ended olduqda tələb olunur.
+
+Event məlumatları call_event_logs cədvəlinə yazılır.
+
+Məlumat RabbitMQ-a göndərilməsi üçün iş növbəsinə (Job Queue) əlavə olunur.
+
+======================================================================
+5. RABBITMQ İNTEQRASİYASI
+
+Validasiya olunmuş məlumatlar birbaşa RabbitMQ-a göndərilmir. Bunun əvəzinə daha peşəkar və dayanıqlı yanaşma seçilmişdir:
+
+5.1. Laravel Job-un işə düşməsi
+
+Event qəbul edildikdən sonra SendCallEventToRabbitJob adlı Job dispatch olunur.
+
+5.2. Job daxilində RabbitMQ Publisher prosesləri
+
+Publisher aşağıdakı addımları icra edir:
+
+RabbitMQ serverinə qoşulur.
+
+“call-events” adlı queue-u yaradır (idempotent şəkildə).
+
+Event JSON məlumatını queue-a push edir.
+
+Mesaj persistent olaraq göndərilir.
+
+5.3. Error handling
+
+RabbitMQ əlçatmaz olarsa:
+
+Exception tutulur
+
+“RabbitMQ publish failed” loqa yazılır
+
+Job avtomatik retry edə bilir
+
+API lazım olduqda 500 cavab qaytarır
+
+Bu yanaşma sistemi daha dayanıqlı və sürətli edir.
+
+======================================================================
+6. LOQLAMA
+
+Hər bir event məlumat bazasında saxlanılır.
+
+Cədvəl: call_event_logs
+
+Sutunlar:
+
+id
+
+call_id
+
+event_type
+
+payload (JSON formatında)
+
+created_time
+
+======================================================================
+7. RABBITMQ WEB PANEL
+
+RabbitMQ üçün idarəetmə panelinə keçid:
+
+URL: http://localhost:15672
+
+İstifadəçi adı: guest
+Şifrə: guest
+
+Bu paneldən “call-events” queue-na daxil olan mesajları izləmək mümkündür.
